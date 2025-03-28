@@ -1,20 +1,24 @@
 {
-  "name": "typescript-action",
-  "description": "GitHub Actions TypeScript template",
-  "version": "0.0.0",
-  "author": "",
+  "name": "resign_ipa",
+  "description": "GitHub Action for resigning iOS IPA files using zsign",
+  "version": "1.0.0",
+  "author": "DengWwW",
   "type": "module",
   "private": true,
-  "homepage": "https://github.com/actions/typescript-action",
+  "homepage": "https://github.com/ivine/resign_ipa",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/actions/typescript-action.git"
+    "url": "git+https://github.com/ivine/resign_ipa.git"
   },
   "bugs": {
-    "url": "https://github.com/actions/typescript-action/issues"
+    "url": "https://github.com/ivine/resign_ipa/issues"
   },
   "keywords": [
-    "actions"
+    "actions",
+    "ios",
+    "ipa",
+    "resign",
+    "zsign"
   ],
   "exports": {
     ".": "./dist/index.js"
