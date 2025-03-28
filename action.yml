@@ -1,23 +1,75 @@
-name: The name of your action here
-description: Provide a description here
-author: Your name or organization here
+name: resign ipa
+description: A GitHub Action to resign iOS IPA files using zsign.
+author: DengWwW
 
-# Add your action's branding here. This will appear on the GitHub Marketplace.
 branding:
-  icon: heart
-  color: red
+  icon: lock
+  color: blue
 
-# Define your inputs here.
 inputs:
-  milliseconds:
-    description: Your input description here
+  app_path:
+    description: 'Path to the IPA file to resign'
     required: true
-    default: '1000'
 
-# Define your outputs here.
+  output_path:
+    description: 'Path to output IPA file'
+    required: true
+
+  pkey:
+    description: 'Path to private key or P12 file'
+    required: false
+  prov:
+    description: "Comma-separated list of paths to mobile provisioning profiles"
+    required: false
+  cert:
+    description: 'Path to certificate file'
+    required: false
+  password:
+    description: 'Password for private key or P12 file'
+    required: false
+  bundle_id:
+    description: 'New bundle identifier'
+    required: false
+  bundle_name:
+    description: 'New bundle name'
+    required: false
+  bundle_version:
+    description: 'New bundle version'
+    required: false
+  entitlements:
+    description: 'Path to entitlements file'
+    required: false
+  zip_level:
+    description: 'Compression level for output IPA (0-9)'
+    required: false
+  dylib:
+    description: 'Path to inject dylib file (repeatable)'
+    required: false
+  weak:
+    description: 'Inject dylib as LC_LOAD_WEAK_DYLIB'
+    required: false
+  temp_folder:
+    description: 'Path to temporary folder for intermediate files'
+    required: false
+  sha256_only:
+    description: 'Serialize a single code directory using SHA256'
+    required: false
+  quiet:
+    description: 'Quiet mode, suppress output'
+    required: true
+  force:
+    description: 'Force sign without cache when signing folder'
+    required: false
+  adhoc:
+    description: 'Perform ad-hoc signature only'
+    required: false
+  debug:
+    description: 'Generate debug output files (.zsign_debug folder)'
+    required: false
+
 outputs:
-  time:
-    description: Your output description here
+  resigned_app:
+    description: 'Path to the resigned IPA file'
 
 runs:
   using: node20
