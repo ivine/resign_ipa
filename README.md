@@ -13,16 +13,24 @@ This GitHub Action is designed to resign iOS IPA files using the `zsign` tool. I
 - **Example**: `/path/to/output/resigned_app.ipa`
 
 ### `pkey` (optional)
-- **Description**: Path to private key or P12 file.
-- **Example**: `/path/to/private.key`
+- **Description**: Private key content (Base64-encoded or plain string). Only used if not using P12.
+- **Example**: `${{ secrets.PKEY_CONTENT }}`
 
 ### `prov` (optional)
-- **Description**: Comma-separated list of paths to mobile provisioning profiles.
-- **Example**: `/path/to/prov1.mobileprovision,/path/to/prov2.mobileprovision`
+- **Description**: Comma-separated content (not path) of mobile provisioning profiles (Base64-encoded).
+- **Example**: `${{ secrets.PROV1_BASE64 }},${{ secrets.PROV2_BASE64 }}`
 
 ### `cert` (optional)
-- **Description**: Path to the certificate file.
-- **Example**: `/path/to/certificate.pem`
+- **Description**: Certificate content (PEM format, optional if using P12).
+- **Example**: `${{ secrets.CERT_CONTENT }}`
+
+### `p12_base64` (optional)
+- **Description**: Base64-encoded P12 certificate content.
+- **Example**: `${{ secrets.P12_CERTIFICATE_BASE64 }}`
+
+### `p12_password` (optional)
+- **Description**: Password for P12 file.
+- **Example**: `${{ secrets.P12_PASSWORD }}`
 
 ### `password` (optional)
 - **Description**: Password for private key or P12 file.
@@ -64,7 +72,7 @@ This GitHub Action is designed to resign iOS IPA files using the `zsign` tool. I
 - **Description**: Serialize a single code directory using SHA256.
 - **Example**: `true`
 
-### `quiet` (required)
+### `quiet` (optional)
 - **Description**: Quiet mode, suppress output.
 - **Example**: `true`
 
@@ -88,7 +96,15 @@ This GitHub Action is designed to resign iOS IPA files using the `zsign` tool. I
 
 ## Usage
 
-Here's an example workflow using this action:
+**macOS Tips**:
+
+To convert a certificate or provisioning profile to Base64:
+
+```bash
+base64 -i path/to/file.mobileprovision | pbcopy
+```
+
+### Example Workflow
 
 ```yaml
 name: Resign IPA Workflow
@@ -106,12 +122,52 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v2
 
-      - name: Resign IPA
+      - name: Re-sign IPA
         uses: ivine/resign_ipa@v1
         with:
+          app_path: './Payload/MyApp.ipa'
+          output_path: './dist/MyApp-resigned.ipa'
           zip_level: '9'
-          pkey: '/path/to/private.key'
-          password: 'your_password'
-          prov: '/path/to/prov1.mobileprovision,/path/to/prov2.mobileprovision'
-          app_path: '/path/to/your/app.ipa'
-          output_path: '/path/to/output/resigned_app.ipa'
+          prov: ${{ secrets.PROV_PROFILES }}
+          p12_base64: ${{ secrets.P12_CERTIFICATE_BASE64 }}
+          p12_password: ${{ secrets.P12_PASSWORD }}
+          force: true
+```
+
+### Example with Multiple Provisioning Profiles
+
+```yaml
+name: Resign IPA with Multiple Provisioning Profiles
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  resign:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Re-sign IPA with multiple profiles
+        uses: ivine/resign_ipa@v1
+        with:
+          app_path: './Payload/MyApp.ipa'
+          output_path: './dist/MyApp-resigned.ipa'
+          prov: ${{ secrets.PROV1_BASE64 }},${{ secrets.PROV2_BASE64 }}
+          p12_base64: ${{ secrets.P12_CERTIFICATE_BASE64 }}
+          p12_password: ${{ secrets.P12_PASSWORD }}
+          quiet: true
+          debug: true
+```
+
+## Notes
+
+- If you're using `.p12` certificate, only `p12_base64` and `p12_password` are required.
+- If you're using separate `.pem` and `.key` files, use `cert`, `pkey`, and `password`.
+- Provisioning profiles must be provided as Base64-encoded strings.
+- All secrets should be stored securely in GitHub Secrets.
+

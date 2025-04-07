@@ -1,75 +1,84 @@
 import * as core from '@actions/core'
 import * as exec from '@actions/exec'
-import * as fs from 'fs'
+import * as fs from 'fs/promises'
+import * as fssync from 'fs'
 import * as path from 'path'
 import * as os from 'os'
 import { fileURLToPath } from 'url'
+
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
+const __tmp_secrets_dir = path.join(__dirname, 'temp-secrets')
+
+const noValueFlags = ['-a', '-d', '-f', '-w', '-2', '-q']
 
 /**
  * 运行 zsign 进行重签名
  */
 export async function run() {
   try {
+    await fs.mkdir(__tmp_secrets_dir, { recursive: true })
+
     const zsignPath = getZSignPath()
     await checkFileExists(zsignPath)
 
-    // 确保 zsign 可执行（Windows 不需要）
     if (os.platform() !== 'win32') {
-      fs.chmodSync(zsignPath, 0o755)
+      await fs.chmod(zsignPath, 0o755)
     }
 
-    core.info('Running zsign...')
-    const args = getZSignArguments()
+    await prepareSecrets()
 
+    const args = getZSignArguments()
+    core.info('🚀 Running zsign...')
     await exec.exec(zsignPath, args)
-    core.info(`✅ zsign execution completed.`)
+    core.info('✅ zsign execution completed.')
   } catch (error) {
     core.setFailed(
       `❌ ${error instanceof Error ? error.message : String(error)}`
     )
+  } finally {
+    await cleanup()
   }
 }
 
 /**
- * 根据当前操作系统和架构选择合适的 zsign 可执行文件
+ * 准备 pkey, cert, prov 内容，写入临时目录
  */
-function getZSignPath(): string {
-  const platform = os.platform()
-  const arch = os.arch()
-  let binaryName = ''
-
-  if (platform === 'linux') {
-    binaryName = 'zsign_linux'
-  } else if (platform === 'darwin') {
-    binaryName = arch === 'arm64' ? 'zsign_macos_apple_silicon' : 'zsign_macos'
-  } else if (platform === 'win32') {
-    binaryName = 'zsign_windows.exe'
-  } else {
-    throw new Error(`Unsupported platform: ${platform} ${arch}`)
+async function prepareSecrets() {
+  const pkey = core.getInput('pkey')
+  if (pkey) {
+    const pkeyPath = path.join(__tmp_secrets_dir, 'private.key')
+    const buffer = Buffer.from(pkey, 'base64')
+    await fs.writeFile(pkeyPath, buffer)
   }
 
-  const __filename = fileURLToPath(import.meta.url)
-  const __dirname = path.dirname(__filename)
+  const cert = core.getInput('cert')
+  if (cert) {
+    const certPath = path.join(__tmp_secrets_dir, 'certificate.pem')
+    const buffer = Buffer.from(cert, 'base64')
+    await fs.writeFile(certPath, buffer)
+  }
 
-  const zsignPath = path.join(__dirname, 'zsign', binaryName)
-  core.info(`Detected system: ${platform} (${arch}), using ${binaryName}`)
-  return zsignPath
-}
-
-/**
- * 确保文件存在，否则抛出错误
- */
-async function checkFileExists(filePath: string): Promise<void> {
-  if (filePath && !fs.existsSync(filePath)) {
-    throw new Error(`File not found: ${filePath}`)
+  const prov = core.getInput('prov')
+  if (prov) {
+    const contents = prov.split(',').map((p) => p.trim())
+    for (let i = 0; i < contents.length; i++) {
+      const content = contents[i]
+      if (content.length === 0) {
+        continue
+      }
+      const provPath = path.join(__tmp_secrets_dir, `prov_${i}.mobileprovision`)
+      const buffer = Buffer.from(content, 'base64')
+      await fs.writeFile(provPath, buffer, 'utf-8')
+    }
   }
 }
 
 /**
- * 解析 GitHub Action 的 inputs 并映射到 zsign 参数
+ * 生成 zsign 参数
  */
 function getZSignArguments(): string[] {
-  const argMap: { [key: string]: string } = {
+  const argMap: Record<string, string> = {
     pkey: '-k',
     cert: '-c',
     adhoc: '-a',
@@ -91,38 +100,33 @@ function getZSignArguments(): string[] {
 
   const args: string[] = []
 
-  // 获取并验证必填项 app_path 和 output_path
   const appPath = core.getInput('app_path')
-  if (!appPath) {
-    throw new Error('Missing required input: app_path')
-  }
+  if (!appPath) throw new Error('Missing required input: app_path')
   args.push(appPath)
 
   const outputPath = core.getInput('output_path')
-  if (!outputPath) {
-    throw new Error('Missing required input: output_path')
-  }
+  if (!outputPath) throw new Error('Missing required input: output_path')
   args.push('-o', outputPath)
 
-  // 处理 prov 输入项，支持多个值
-  const prov = core.getInput('prov')
-  if (prov) {
-    const provPaths = prov.split(',').map((p) => p.trim())
-    for (const provPath of provPaths) {
-      args.push('-m', provPath)
-    }
+  const provFiles = fssync
+    .readdirSync(__tmp_secrets_dir)
+    .filter((f) => f.endsWith('.mobileprovision'))
+    .map((f) => path.join(__tmp_secrets_dir, f))
+
+  for (const prov of provFiles) {
+    args.push('-m', prov)
   }
 
-  // 遍历 argMap，根据输入映射生成 zsign 参数
   for (const [inputKey, cliFlag] of Object.entries(argMap)) {
     const value = core.getInput(inputKey)
-
-    // 如果输入值存在，将对应的参数添加到 args 中
-    if (value) {
+    if (inputKey === 'pkey') {
+      const pkeyPath = path.join(__tmp_secrets_dir, 'private.key')
+      args.push('-k', pkeyPath)
+    } else if (inputKey === 'cert') {
+      const certPath = path.join(__tmp_secrets_dir, 'certificate.pem')
+      args.push('-c', certPath)
+    } else if (value) {
       args.push(cliFlag)
-
-      // 如果参数不需要附加值（如 flag 参数 -a, -d 等），则跳过附加值
-      const noValueFlags = ['-a', '-d', '-f', '-w', '-2', '-q']
       if (!noValueFlags.includes(cliFlag)) {
         args.push(value)
       }
@@ -130,4 +134,41 @@ function getZSignArguments(): string[] {
   }
 
   return args
+}
+
+function getZSignPath(): string {
+  const platform = os.platform()
+  const arch = os.arch()
+  let binaryName = ''
+
+  if (platform === 'linux') {
+    binaryName = 'zsign_linux'
+  } else if (platform === 'darwin') {
+    binaryName = arch === 'arm64' ? 'zsign_macos_apple_silicon' : 'zsign_macos'
+  } else if (platform === 'win32') {
+    binaryName = 'zsign_windows.exe'
+  } else {
+    throw new Error(`Unsupported platform: ${platform} ${arch}`)
+  }
+
+  const zsignPath = path.join(__dirname, 'zsign', binaryName)
+  core.info(`Detected system: ${platform} (${arch}), using ${binaryName}`)
+  return zsignPath
+}
+
+async function checkFileExists(filePath: string): Promise<void> {
+  try {
+    await fs.access(filePath)
+  } catch {
+    throw new Error(`File not found: ${filePath}`)
+  }
+}
+
+async function cleanup() {
+  try {
+    await fs.rm(__tmp_secrets_dir, { recursive: true, force: true })
+    core.info('🧹 Cleaned up temporary secrets.')
+  } catch (err) {
+    core.warning(`Failed to clean up temp directory: ${err}`)
+  }
 }
